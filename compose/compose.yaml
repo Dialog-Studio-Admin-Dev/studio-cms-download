@@ -1,0 +1,443 @@
+# Studio CMS: official Compose file of this release. Do not edit it.
+# Your settings live in .env next to this file (start from .env.example).
+# What each file, folder and service is for: README.md.
+# Own additions (certificate, existing reverse proxy, CDN): compose.override.yaml,
+# see examples/.
+
+name: studio
+
+x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+
+# Every service keeps at most 3 x 10 MB of logs.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# No extra privileges inside any container.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  # Runs once before every start: creates folders with the right owners and
+  # generates missing secrets in data/secrets/. Ends after its run.
+  init:
+    <<: [*logging, *hardening]
+    image: *studio-image
+    command: ["studio-init"]
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    read_only: true
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    healthcheck:
+      disable: true
+    environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
+      STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
+      STUDIO_BACKUP_DIR: ${STUDIO_BACKUP_DIR:-./backups}
+      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+      # Set in .env only to restore a secret from the recovery kit;
+      # otherwise init generates it. Unset settings stay unset here.
+      STUDIO_COOKIE_SECRET:
+      STUDIO_INTERNAL_SECRET:
+      STUDIO_SEAL_KEYS:
+      STUDIO_RENDERER_TOKEN:
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}:/data
+      - ${STUDIO_BACKUP_DIR:-./backups}:/backup
+
+  # The Studio: editor, API and the websites' forms, bookings and statistics.
+  studio:
+    <<: [*logging, *hardening]
+    image: *studio-image
+    restart: unless-stopped
+    init: true
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 2048
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      preview-gate:
+        condition: service_started
+    environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
+      STUDIO_SITES_DOMAIN:
+      STUDIO_PUBLIC_DOMAIN:
+      STUDIO_UPSTREAM_PROXY_IPS:
+      STUDIO_UPSTREAM_PROXY_HOPS:
+      STUDIO_DELIVERY_SERVER_IPS:
+      STUDIO_DELIVERY_RESERVED_DOMAINS:
+      STUDIO_DEFAULT_BUILD:
+      STUDIO_ALLOW_UNSANDBOXED_BUILD:
+      STUDIO_GEOIP:
+      STUDIO_ALERTS:
+      STUDIO_COPY_MODE:
+      STUDIO_CONFIRM_UPDATE:
+      STUDIO_BACKUP_KEEP_LOCAL:
+      STUDIO_BACKUP_MAX_AGE_MINUTES:
+      STUDIO_VIDEO_MAX_MB:
+      STUDIO_VIDEO_MAX_PER_PROJECT:
+      STUDIO_VIDEO_BUDGET_MB:
+      STUDIO_GITHUB_APP_ID:
+      STUDIO_GITHUB_APP_PRIVATE_KEY:
+      STUDIO_GITHUB_INSTALLATION_ID:
+      STUDIO_GITHUB_APP_SLUG:
+      STUDIO_BITBUCKET_WORKSPACE:
+      STUDIO_BITBUCKET_AUTH:
+      STUDIO_BITBUCKET_EMAIL:
+      STUDIO_BITBUCKET_OAUTH_KEY:
+      STUDIO_BITBUCKET_OAUTH_SECRET:
+      STUDIO_BITBUCKET_TOKEN:
+      # Secrets set in .env win over data/secrets/studio.env; studio config
+      # reports them until the line is removed.
+      STUDIO_COOKIE_SECRET:
+      STUDIO_INTERNAL_SECRET:
+      STUDIO_SEAL_KEYS:
+      STUDIO_RENDERER_TOKEN:
+      STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
+      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
+      - ${STUDIO_DATA_DIR:-./data}/preview:/vorschau/daten
+      - ${STUDIO_DATA_DIR:-./data}/secrets:/app/secrets:ro
+      - ${STUDIO_BACKUP_DIR:-./backups}/pre-update:/backup/pre-update
+      - ${STUDIO_BACKUP_DIR:-./backups}/repo-spiegel:/backup/repo-spiegel
+      - build:/bau
+    networks:
+      - proxy
+      - preview-link
+
+  # Preview of the websites. Runs foreign project code, so it sees no Studio
+  # setting, no database and no network but the preview gate.
+  renderer:
+    <<: [*logging, *hardening]
+    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    mem_limit: ${STUDIO_RENDERER_MEMORY_MB:-1400}m
+    memswap_limit: ${STUDIO_RENDERER_MEMORY_MB:-1400}m
+    pids_limit: ${STUDIO_RENDERER_PID_LIMIT:-512}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      RENDERER_STUDIO_ORIGIN: https://${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
+      RENDERER_ROOTS: /vorschau/daten
+      RENDERER_PROCESSES: ${STUDIO_RENDERER_PROCESSES:-1}
+      RENDERER_START_PROCESSES: ${STUDIO_RENDERER_START_PROCESSES:-1}
+    tmpfs:
+      - /lauf:uid=10001,gid=10001,mode=0700,size=${STUDIO_RENDERER_TMPFS_MB:-160}m
+      - /tmp:uid=10001,gid=10001,mode=0700,size=96m
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}/preview:/vorschau/daten:ro
+      - ${STUDIO_DATA_DIR:-./data}/secrets/renderer:/app/secrets:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8790,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      preview:
+        aliases: [renderer-backend]
+
+  # The only way from the Studio to the renderer. The renderer cannot reach
+  # the Studio, so project code cannot call its API or fake visitor addresses.
+  preview-gate:
+    <<: [*logging, *hardening]
+    image: *studio-image
+    command: ["node", "/app/stack-helper.mjs", "preview-gate", "renderer-backend:8790"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 64m
+    memswap_limit: 64m
+    pids_limit: 32
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8790,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      preview: {}
+      preview-link:
+        aliases: [renderer]
+
+  # Serves published websites whose domain points to this server; on by
+  # default. Serves nothing until a project in the Studio has a domain.
+  delivery:
+    <<: [*logging, *hardening]
+    image: *studio-image
+    command: ["node", "/app/delivery-service.mjs"]
+    restart: unless-stopped
+    init: true
+    user: "10002:10002"
+    read_only: true
+    mem_limit: 192m
+    memswap_limit: 192m
+    pids_limit: 64
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      DELIVERY_RESERVED_DOMAINS: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example},${STUDIO_PUBLIC_DOMAIN:-},${STUDIO_DELIVERY_RESERVED_DOMAINS:-}
+      DELIVERY_CERT_RESOLVER: http01
+    tmpfs:
+      - /app/data:size=64k,mode=0555
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}/studio/deploy-target/releases:/app/data/deploy-target/releases:ro
+      - ${STUDIO_DATA_DIR:-./data}/studio/deploy-target/auslieferung:/app/data/deploy-target/auslieferung:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/gesundheit"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - edge
+
+  # Local backups on a fixed schedule; with the profile "offsite" also an
+  # encrypted copy with restic. Only this service sees the backup access.
+  backup:
+    <<: [*logging, *hardening]
+    image: *studio-image
+    command: ["studio-backup", "service"]
+    user: "0:0"
+    restart: unless-stopped
+    init: true
+    # Copies run as the Studio's user, so no file in data/ becomes root-owned.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      studio:
+        condition: service_started
+    healthcheck:
+      disable: true
+    environment:
+      STUDIO_BACKUP_KEEP_LOCAL:
+      STUDIO_BACKUP_KEEP_OFFSITE:
+      STUDIO_BACKUP_OFFSITE:
+      STUDIO_BACKUP_RSYNC_TARGET:
+      STUDIO_BACKUP_PROTECTION:
+      STUDIO_BACKUP_PROOF_TARGET:
+      STUDIO_COPY_MODE:
+      RESTIC_REPOSITORY:
+      RESTIC_PASSWORD:
+      AWS_ACCESS_KEY_ID:
+      AWS_SECRET_ACCESS_KEY:
+      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
+      - ${STUDIO_DATA_DIR:-./data}/secrets:/app/secrets
+      - ${STUDIO_BACKUP_DIR:-./backups}:/backup
+      # The repository mirror for the Studio's user, to restore a single project.
+      - ${STUDIO_BACKUP_DIR:-./backups}/repo-spiegel:/repo-spiegel:ro
+    networks:
+      - backup
+
+  # Profile "build": builds websites on this server, each build in its own
+  # container without network. The only service with access to Docker.
+  build:
+    <<: [*logging, *hardening]
+    profiles: [build]
+    image: *studio-image
+    command: ["node", "/app/build-service.mjs"]
+    restart: unless-stopped
+    init: true
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_add: [DAC_OVERRIDE, CHOWN]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      disable: true
+    environment:
+      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+      BUILD_VOLUME: ${COMPOSE_PROJECT_NAME:-studio}_build
+    volumes:
+      - build:/bau
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Profile "proxy": accepts ports 80 and 443, gets certificates from
+  # Let's Encrypt and forwards to the Studio. Routes: configs below.
+  proxy:
+    <<: [*logging, *hardening]
+    profiles: [proxy]
+    image: traefik:v3.7
+    restart: unless-stopped
+    cap_add: [NET_BIND_SERVICE]
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 256
+    depends_on:
+      delivery:
+        condition: service_healthy
+    ports:
+      - ${STUDIO_HTTP_PORT:-80}:80
+      - ${STUDIO_HTTPS_PORT:-443}:443
+    environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
+      STUDIO_PUBLIC_DOMAIN:
+      STUDIO_UPSTREAM_PROXY_IPS:
+      STUDIO_UPSTREAM_PROXY_ONLY: ${STUDIO_UPSTREAM_PROXY_ONLY:-false}
+      STUDIO_PROXY_CERT_RESOLVER: letsencrypt
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --api.dashboard=false
+      - --ping=true
+      - --ping.entrypoint=ping
+      - --entrypoints.ping.address=:8082
+      - --entrypoints.http.address=:80
+      - --entrypoints.https.address=:443
+      - --entrypoints.http.http.encodequerysemicolons=true
+      - --entrypoints.https.http.encodequerysemicolons=true
+      - --entrypoints.http.forwardedheaders.trustedips=${STUDIO_UPSTREAM_PROXY_IPS:-127.0.0.1/32}
+      - --entrypoints.https.forwardedheaders.trustedips=${STUDIO_UPSTREAM_PROXY_IPS:-127.0.0.1/32}
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --providers.http.endpoint=http://delivery:8081/traefik-konfiguration
+      - --providers.http.pollinterval=10s
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
+      - --certificatesresolvers.letsencrypt.acme.storage=/data/acme.json
+      - --certificatesresolvers.letsencrypt.acme.email=${STUDIO_ACME_EMAIL:-}
+    configs:
+      - source: proxy-routes
+        target: /etc/traefik/dynamic/routes.yaml
+    volumes:
+      - ${STUDIO_DATA_DIR:-./data}/proxy:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8082/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - proxy
+      - edge
+
+  # Profile "proxy": the page visitors see while the Studio restarts.
+  maintenance:
+    <<: [*logging, *hardening]
+    profiles: [proxy]
+    image: *studio-image
+    command: ["node", "/app/stack-helper.mjs", "maintenance-page"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 64m
+    memswap_limit: 64m
+    pids_limit: 32
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8080,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - edge
+
+networks:
+  # Proxy and Studio; the only network with internet access besides backup.
+  proxy: {}
+  # Studio and preview gate.
+  preview-link:
+    internal: true
+  # Preview gate and renderer.
+  preview:
+    internal: true
+  # Proxy, delivery and maintenance page.
+  edge:
+    internal: true
+  # Backup service, with internet access for the off-site copy.
+  backup: {}
+
+volumes:
+  # Working folder of website builds; the build service and its build
+  # containers mount it by this name.
+  build:
+    name: ${COMPOSE_PROJECT_NAME:-studio}_build
+
+configs:
+  # Routes of the proxy. Domains come from .env through the proxy's
+  # environment and are normalized here like in the Studio.
+  proxy-routes:
+    content: |
+      {{- $$studio := regexReplaceAll "[/?#:].*$$" (regexReplaceAll "^[a-z][a-z0-9+.-]*://" (env "STUDIO_DOMAIN" | trim | lower) "") "" | trimSuffix "." }}
+      {{- $$public := regexReplaceAll "[/?#:].*$$" (regexReplaceAll "^[a-z][a-z0-9+.-]*://" (env "STUDIO_PUBLIC_DOMAIN" | trim | lower) "") "" | trimSuffix "." }}
+      {{- $$resolver := env "STUDIO_PROXY_CERT_RESOLVER" | trim | default "letsencrypt" }}
+      {{- $$only := eq (env "STUDIO_UPSTREAM_PROXY_ONLY" | trim | lower) "true" }}
+      http:
+        routers:
+          studio-http:
+            entryPoints: [http]
+            rule: Host(`{{ $$studio }}`)
+            priority: 1000
+            middlewares: [{{ if $$only }}upstream-only, {{ end }}redirect-https]
+            service: studio
+          studio:
+            entryPoints: [https]
+            rule: Host(`{{ $$studio }}`)
+            priority: 1000
+            middlewares: [{{ if $$only }}upstream-only, {{ end }}maintenance, compress]
+            service: studio
+            tls: {{ if ne $$resolver "none" }}{ certResolver: {{ $$resolver }} }{{ else }}{}{{ end }}
+      {{- if and $$public (ne $$public $$studio) }}
+          public-http:
+            entryPoints: [http]
+            rule: 'Host(`{{ $$public }}`) && (PathPrefix(`/api/public/`) || PathPrefix(`/api/release-build/`) || PathPrefix(`/api/medien/`) || PathPrefix(`/api/deploy-zusage/`) || PathPrefix(`/api/erecht24/`) || Path(`/api/health`)) && !PathPrefix(`/api/public/invite/`) && !Path(`/api/public/marke`)'
+            priority: 1000
+            middlewares: [{{ if $$only }}upstream-only, {{ end }}redirect-https]
+            service: studio
+          public:
+            entryPoints: [https]
+            rule: 'Host(`{{ $$public }}`) && (PathPrefix(`/api/public/`) || PathPrefix(`/api/release-build/`) || PathPrefix(`/api/medien/`) || PathPrefix(`/api/deploy-zusage/`) || PathPrefix(`/api/erecht24/`) || Path(`/api/health`)) && !PathPrefix(`/api/public/invite/`) && !Path(`/api/public/marke`)'
+            priority: 1000
+            middlewares: [{{ if $$only }}upstream-only, {{ end }}maintenance, compress]
+            service: studio
+            tls: {{ if ne $$resolver "none" }}{ certResolver: {{ $$resolver }} }{{ else }}{}{{ end }}
+      {{- end }}
+        middlewares:
+          redirect-https:
+            redirectScheme: { scheme: https, permanent: true }
+          compress:
+            compress: {}
+          maintenance:
+            errors:
+              status: ["502", "504"]
+              statusRewrites: { "502": 503, "504": 503 }
+              service: maintenance
+              query: /
+      {{- if $$only }}
+          upstream-only:
+            ipAllowList:
+              ipStrategy: { depth: 0 }
+              sourceRange:
+      {{- range splitList "," (env "STUDIO_UPSTREAM_PROXY_IPS") }}{{ if trim . }}
+                - {{ trim . | quote }}{{ end }}{{ end }}
+      {{- end }}
+        services:
+          studio:
+            loadBalancer:
+              passHostHeader: true
+              servers:
+                - url: http://studio:8787
+          maintenance:
+            loadBalancer:
+              servers:
+                - url: http://maintenance:8080
