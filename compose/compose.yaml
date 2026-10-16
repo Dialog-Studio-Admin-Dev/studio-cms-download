@@ -1,12 +1,14 @@
 # Studio CMS: official Compose file of this release. Do not edit it.
+# It names its version below; to update, unpack the zip of the new version
+# here (unzip -o), then docker compose up -d.
 # Your settings live in .env next to this file (start from .env.example).
 # What each file, folder and service is for: README.md.
-# Own additions (certificate, existing reverse proxy, CDN): compose.override.yaml,
-# see examples/.
+# Own additions and advanced settings (certificate, existing reverse proxy,
+# larger preview): compose.override.yaml, see examples/.
 
 name: studio
 
-x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:-1.2.1}
 
 # Every service keeps at most 3 x 10 MB of logs.
 x-logging: &logging
@@ -41,10 +43,11 @@ services:
       STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
       STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
       STUDIO_BACKUP_DIR: ${STUDIO_BACKUP_DIR:-./backups}
-      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_VERSION: "2"
       STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
-      # Set in .env only to restore a secret from the recovery kit;
-      # otherwise init generates it. Unset settings stay unset here.
+      # Set in .env only to restore a secret from the recovery kit; otherwise
+      # init generates it. init stores it in data/secrets/studio.env, the only
+      # place the studio reads it from; then remove the line from .env.
       STUDIO_COOKIE_SECRET:
       STUDIO_INTERNAL_SECRET:
       STUDIO_SEAL_KEYS:
@@ -65,53 +68,35 @@ services:
     depends_on:
       init:
         condition: service_completed_successfully
+        # init stores secrets from .env in data/secrets/studio.env; the studio
+        # reads only that file and restarts when init changed.
+        restart: true
       preview-gate:
         condition: service_started
+    # Values come from .env; a setting not set there stays unset here.
+    # Rare settings (handbook, "Advanced settings") go through
+    # compose.override.yaml, see examples/.
     environment:
       STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
       STUDIO_SITES_DOMAIN:
       STUDIO_PUBLIC_DOMAIN:
       STUDIO_UPSTREAM_PROXY_IPS:
-      STUDIO_UPSTREAM_PROXY_HOPS:
-      STUDIO_DELIVERY_SERVER_IPS:
-      STUDIO_DELIVERY_RESERVED_DOMAINS:
-      STUDIO_DEFAULT_BUILD:
-      STUDIO_ALLOW_UNSANDBOXED_BUILD:
       STUDIO_GEOIP:
       STUDIO_ALERTS:
       STUDIO_COPY_MODE:
       STUDIO_CONFIRM_UPDATE:
       STUDIO_BACKUP_KEEP_LOCAL:
-      STUDIO_BACKUP_MAX_AGE_MINUTES:
-      STUDIO_VIDEO_MAX_MB:
-      STUDIO_VIDEO_MAX_PER_PROJECT:
-      STUDIO_VIDEO_BUDGET_MB:
-      STUDIO_GITHUB_APP_ID:
-      STUDIO_GITHUB_APP_PRIVATE_KEY:
-      STUDIO_GITHUB_INSTALLATION_ID:
-      STUDIO_GITHUB_APP_SLUG:
-      STUDIO_BITBUCKET_WORKSPACE:
-      STUDIO_BITBUCKET_AUTH:
-      STUDIO_BITBUCKET_EMAIL:
-      STUDIO_BITBUCKET_OAUTH_KEY:
-      STUDIO_BITBUCKET_OAUTH_SECRET:
-      STUDIO_BITBUCKET_TOKEN:
-      # Secrets set in .env win over data/secrets/studio.env; studio config
-      # reports them until the line is removed.
-      STUDIO_COOKIE_SECRET:
-      STUDIO_INTERNAL_SECRET:
-      STUDIO_SEAL_KEYS:
-      STUDIO_RENDERER_TOKEN:
       STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
-      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_VERSION: "2"
+      STUDIO_COMPOSE_RELEASE: "1.2.1"
       STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
-      - ${STUDIO_DATA_DIR:-./data}/preview:/vorschau/daten
+      - ${STUDIO_DATA_DIR:-./data}/preview:/preview
       - ${STUDIO_DATA_DIR:-./data}/secrets:/app/secrets:ro
       - ${STUDIO_BACKUP_DIR:-./backups}/pre-update:/backup/pre-update
-      - ${STUDIO_BACKUP_DIR:-./backups}/repo-spiegel:/backup/repo-spiegel
-      - build:/bau
+      - ${STUDIO_BACKUP_DIR:-./backups}/repo-mirror:/backup/repo-mirror
+      - build:/build
     networks:
       - proxy
       - preview-link
@@ -120,27 +105,31 @@ services:
   # setting, no database and no network but the preview gate.
   renderer:
     <<: [*logging, *hardening]
-    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.2.1}
     restart: unless-stopped
     init: true
     user: "10001:10001"
     read_only: true
-    mem_limit: ${STUDIO_RENDERER_MEMORY_MB:-1400}m
-    memswap_limit: ${STUDIO_RENDERER_MEMORY_MB:-1400}m
-    pids_limit: ${STUDIO_RENDERER_PID_LIMIT:-512}
+    # One preview at a time; for more: examples/larger-preview.yaml.
+    mem_limit: 1400m
+    memswap_limit: 1400m
+    pids_limit: 512
     depends_on:
       init:
         condition: service_completed_successfully
+        # init writes the renderer token; a new token needs a restart.
+        restart: true
     environment:
       RENDERER_STUDIO_ORIGIN: https://${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
-      RENDERER_ROOTS: /vorschau/daten
-      RENDERER_PROCESSES: ${STUDIO_RENDERER_PROCESSES:-1}
-      RENDERER_START_PROCESSES: ${STUDIO_RENDERER_START_PROCESSES:-1}
+      RENDERER_ROOTS: /preview
+      RENDERER_PROCESSES: "1"
+      RENDERER_START_PROCESSES: "1"
+    # /work holds the working copies of the preview runs.
     tmpfs:
-      - /lauf:uid=10001,gid=10001,mode=0700,size=${STUDIO_RENDERER_TMPFS_MB:-160}m
+      - /work:uid=10001,gid=10001,mode=0700,size=160m
       - /tmp:uid=10001,gid=10001,mode=0700,size=96m
     volumes:
-      - ${STUDIO_DATA_DIR:-./data}/preview:/vorschau/daten:ro
+      - ${STUDIO_DATA_DIR:-./data}/preview:/preview:ro
       - ${STUDIO_DATA_DIR:-./data}/secrets/renderer:/app/secrets:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('net').connect(8790,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
@@ -174,7 +163,8 @@ services:
       preview-link:
         aliases: [renderer]
 
-  # Serves published websites whose domain points to this server; on by
+  # Serves pitches, and live websites if wanted, whose domain points to this
+  # server; on by default. Live websites run on a separate web server by
   # default. Serves nothing until a project in the Studio has a domain.
   delivery:
     <<: [*logging, *hardening]
@@ -191,15 +181,15 @@ services:
       init:
         condition: service_completed_successfully
     environment:
-      DELIVERY_RESERVED_DOMAINS: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example},${STUDIO_PUBLIC_DOMAIN:-},${STUDIO_DELIVERY_RESERVED_DOMAINS:-}
+      DELIVERY_RESERVED_DOMAINS: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example},${STUDIO_PUBLIC_DOMAIN:-}
       DELIVERY_CERT_RESOLVER: http01
     tmpfs:
       - /app/data:size=64k,mode=0555
     volumes:
       - ${STUDIO_DATA_DIR:-./data}/studio/deploy-target/releases:/app/data/deploy-target/releases:ro
-      - ${STUDIO_DATA_DIR:-./data}/studio/deploy-target/auslieferung:/app/data/deploy-target/auslieferung:ro
+      - ${STUDIO_DATA_DIR:-./data}/studio/deploy-target/delivery:/app/data/deploy-target/delivery:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/gesundheit"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -228,23 +218,20 @@ services:
     environment:
       STUDIO_BACKUP_KEEP_LOCAL:
       STUDIO_BACKUP_KEEP_OFFSITE:
-      STUDIO_BACKUP_OFFSITE:
-      STUDIO_BACKUP_RSYNC_TARGET:
       STUDIO_BACKUP_PROTECTION:
-      STUDIO_BACKUP_PROOF_TARGET:
       STUDIO_COPY_MODE:
       RESTIC_REPOSITORY:
       RESTIC_PASSWORD:
       AWS_ACCESS_KEY_ID:
       AWS_SECRET_ACCESS_KEY:
-      STUDIO_COMPOSE_VERSION: "1"
+      STUDIO_COMPOSE_VERSION: "2"
       STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
       - ${STUDIO_DATA_DIR:-./data}/secrets:/app/secrets
       - ${STUDIO_BACKUP_DIR:-./backups}:/backup
       # The repository mirror for the Studio's user, to restore a single project.
-      - ${STUDIO_BACKUP_DIR:-./backups}/repo-spiegel:/repo-spiegel:ro
+      - ${STUDIO_BACKUP_DIR:-./backups}/repo-mirror:/repo-mirror:ro
     networks:
       - backup
 
@@ -268,10 +255,10 @@ services:
     healthcheck:
       disable: true
     environment:
-      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:?Set STUDIO_VERSION in .env (the version of this download)}
+      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.2.1}
       BUILD_VOLUME: ${COMPOSE_PROJECT_NAME:-studio}_build
     volumes:
-      - build:/bau
+      - build:/build
       - /var/run/docker.sock:/var/run/docker.sock
 
   # Profile "proxy": accepts ports 80 and 443, gets certificates from
@@ -312,7 +299,7 @@ services:
       - --entrypoints.https.forwardedheaders.trustedips=${STUDIO_UPSTREAM_PROXY_IPS:-127.0.0.1/32}
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
-      - --providers.http.endpoint=http://delivery:8081/traefik-konfiguration
+      - --providers.http.endpoint=http://delivery:8081/traefik-config
       - --providers.http.pollinterval=10s
       - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
