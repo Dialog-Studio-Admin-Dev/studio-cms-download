@@ -8,7 +8,7 @@
 
 name: studio
 
-x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:-1.3.0}
+x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:-1.4.1}
 
 # Every service keeps at most 3 x 10 MB of logs.
 x-logging: &logging
@@ -80,6 +80,7 @@ services:
       STUDIO_DOMAIN: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example}
       STUDIO_SITES_DOMAIN:
       STUDIO_PUBLIC_DOMAIN:
+      STUDIO_DELIVERY_RESERVED_DOMAINS:
       STUDIO_UPSTREAM_PROXY_IPS:
       STUDIO_GEOIP:
       STUDIO_ALERTS:
@@ -88,7 +89,7 @@ services:
       STUDIO_BACKUP_KEEP_LOCAL:
       STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
       STUDIO_COMPOSE_VERSION: "2"
-      STUDIO_COMPOSE_RELEASE: "1.3.0"
+      STUDIO_COMPOSE_RELEASE: "1.4.1"
       STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
@@ -105,7 +106,7 @@ services:
   # setting, no database and no network but the preview gate.
   renderer:
     <<: [*logging, *hardening]
-    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.3.0}
+    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.4.1}
     restart: unless-stopped
     init: true
     user: "10001:10001"
@@ -181,7 +182,8 @@ services:
       init:
         condition: service_completed_successfully
     environment:
-      DELIVERY_RESERVED_DOMAINS: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example},${STUDIO_PUBLIC_DOMAIN:-}
+      # Refuses the same domains as the studio.
+      DELIVERY_RESERVED_DOMAINS: ${STUDIO_DOMAIN:?Set STUDIO_DOMAIN in .env, for example STUDIO_DOMAIN=cms.agency.example},${STUDIO_PUBLIC_DOMAIN:-},${STUDIO_DELIVERY_RESERVED_DOMAINS:-}
       DELIVERY_CERT_RESOLVER: http01
     tmpfs:
       - /app/data:size=64k,mode=0555
@@ -197,7 +199,7 @@ services:
     networks:
       - edge
 
-  # Local backups on a fixed schedule; with the profile "offsite" also an
+  # Local backups on a fixed schedule; with RESTIC_REPOSITORY in .env also an
   # encrypted copy with restic. Only this service sees the backup access.
   backup:
     <<: [*logging, *hardening]
@@ -255,7 +257,7 @@ services:
     healthcheck:
       disable: true
     environment:
-      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.3.0}
+      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.4.1}
       BUILD_VOLUME: ${COMPOSE_PROJECT_NAME:-studio}_build
     volumes:
       - build:/build
