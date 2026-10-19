@@ -3,16 +3,16 @@
 Everything a self-hosted Studio CMS needs, one release per version. The images
 themselves need the download access of the publisher (`docker login ghcr.io`).
 
-Current stable version: **1.3.0**
-([files and release notes](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/tag/studio/v1.3.0))
+Current stable version: **1.4.1**
+([files and release notes](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/tag/studio/v1.4.1))
 
-See the files of version 1.3.0 before you download:
+See the files of version 1.4.1 before you download:
 [`compose.yaml`](compose/compose.yaml), [`.env.example`](compose/.env.example)
 and [`README.md`](compose/README.md). `compose.yaml` and `.env.example` are
 in the zip; `.env` is your copy. `.env.example` starts with a dot and is
 hidden: `ls -a` shows it, the macOS Finder with Cmd+Shift+.
 
-Handbook (German, one HTML file): [handbook.html](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/handbook.html).
+Handbook (German, one HTML file): [handbook.html](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/handbook.html).
 It explains every step below, the web server, every setting and what to do
 in an emergency.
 
@@ -43,8 +43,8 @@ website pointing to it.
 ```sh
 sudo -i                              # every command below runs as root
 mkdir -p /opt/studio && cd /opt/studio
-curl -fsSLO https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-compose-1.3.0.zip
-unzip studio-compose-1.3.0.zip
+curl -fsSLO https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-compose-1.4.1.zip
+unzip studio-compose-1.4.1.zip
 cp .env.example .env && nano .env    # set STUDIO_DOMAIN
 docker login ghcr.io                 # your GitHub account with a read:packages token, or the access from the publisher
 docker compose up -d
@@ -65,8 +65,8 @@ server:
 ```sh
 sudo -i                              # every command below runs as root
 mkdir -p /opt/studio-web && cd /opt/studio-web
-curl -fsSLO https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-web-1.3.0.zip
-unzip studio-web-1.3.0.zip && docker compose up -d
+curl -fsSLO https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-web-1.4.1.zip
+unzip studio-web-1.4.1.zip && docker compose up -d
 ```
 
 No `docker login` there: both images are public. Then add the server in the
@@ -86,11 +86,11 @@ below is the same installer for one version.
 
 | File | Content |
 |---|---|
-| [`studio-compose-1.3.0.zip`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-compose-1.3.0.zip) | `compose.yaml`, `.env.example`, `README.md`, `examples/` |
-| [`studio-web-1.3.0.zip`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-web-1.3.0.zip) | web server: `compose.yaml`, `.env.example`, `README.md`, `delivery-service.mjs`, `add-studio.sh` |
-| [`handbook.html`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/handbook.html) | handbook (German) |
-| [`studio-install-1.3.0.sh`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-install-1.3.0.sh) | installer of this version (the command above always takes the current one) |
-| [`studio-self-hosting-v1.3.0.tar.gz`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/studio-self-hosting-v1.3.0.tar.gz) | tools of the one-command installation |
-| [`SHA256SUMS`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.3.0/SHA256SUMS) | checksums of the files above |
+| [`studio-compose-1.4.1.zip`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-compose-1.4.1.zip) | `compose.yaml`, `.env.example`, `README.md`, `examples/` |
+| [`studio-web-1.4.1.zip`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-web-1.4.1.zip) | web server: `compose.yaml`, `.env.example`, `README.md`, `delivery-service.mjs`, `add-studio.sh` |
+| [`handbook.html`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/handbook.html) | handbook (German) |
+| [`studio-install-1.4.1.sh`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-install-1.4.1.sh) | installer of this version (the command above always takes the current one) |
+| [`studio-self-hosting-v1.4.1.tar.gz`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/studio-self-hosting-v1.4.1.tar.gz) | tools of the one-command installation |
+| [`SHA256SUMS`](https://github.com/Dialog-Studio-Admin-Dev/studio-cms-download/releases/download/studio/v1.4.1/SHA256SUMS) | checksums of the files above |
 
 Check a download: `sha256sum --check --ignore-missing SHA256SUMS`
