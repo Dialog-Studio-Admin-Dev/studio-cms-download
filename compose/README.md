@@ -49,7 +49,7 @@ studio        editor, API, forms, bookings, statistics
 renderer      preview of the websites, isolated from the Studio
 preview-gate  the only connection from the Studio to the renderer
 delivery      serves pitches (and live websites, if wanted) whose domain points to this server
-backup        local backups; off-site copy with the profile "offsite"
+backup        local backups; off-site copy with restic once RESTIC_REPOSITORY is set
 build         builds websites on this server (profile "build")
 proxy         HTTPS with Let's Encrypt on ports 80 and 443 (profile "proxy")
 maintenance   page shown while the Studio restarts (profile "proxy")
@@ -72,12 +72,12 @@ Logs: `docker compose logs <service>`. Docker keeps at most 30 MB per service.
   the domain to the project in the Studio and point its DNS A record to this
   server; the certificate follows by itself. If wanted, this server serves
   a live website the same way.
-- Off-site backup: set `RESTIC_REPOSITORY` and `RESTIC_PASSWORD`, add
-  `offsite` to `COMPOSE_PROFILES`, then `docker compose up -d`. The target
-  must only accept new data (append-only); for a target that allows
-  deleting, also set `STUDIO_BACKUP_PROTECTION=none`, otherwise the daily
-  deletion check reports the backup as failed. An rsync or proof target
-  over SSH: `examples/backup-ssh-key.yaml` (key and target).
+- Off-site backup: set `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` in `.env`,
+  then `docker compose up -d`. The target must only accept new data
+  (append-only); for a target that allows deleting, also set
+  `STUDIO_BACKUP_PROTECTION=none`, otherwise the daily deletion check
+  reports the backup as failed. An rsync or proof target over SSH:
+  `examples/backup-ssh-key.yaml` (key and target).
 - Additions from `examples/` (each one listed in `examples/README.md`):
   copy the matching file to `compose.override.yaml`, then
   `docker compose up -d`.
