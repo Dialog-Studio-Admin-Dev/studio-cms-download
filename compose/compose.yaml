@@ -8,7 +8,7 @@
 
 name: studio
 
-x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:-1.5.2}
+x-studio-image: &studio-image ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-cms:v${STUDIO_VERSION:-1.5.3}
 
 # Every service keeps at most 3 x 10 MB of logs.
 x-logging: &logging
@@ -89,7 +89,7 @@ services:
       STUDIO_BACKUP_KEEP_LOCAL:
       STUDIO_DATA_DIR: ${STUDIO_DATA_DIR:-./data}
       STUDIO_COMPOSE_VERSION: "2"
-      STUDIO_COMPOSE_RELEASE: "1.5.2"
+      STUDIO_COMPOSE_RELEASE: "1.5.3"
       STUDIO_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ${STUDIO_DATA_DIR:-./data}/studio:/app/data
@@ -106,7 +106,7 @@ services:
   # setting, no database and no network but the preview gate.
   renderer:
     <<: [*logging, *hardening]
-    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.5.2}
+    image: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.5.3}
     restart: unless-stopped
     init: true
     user: "10001:10001"
@@ -257,7 +257,7 @@ services:
     healthcheck:
       disable: true
     environment:
-      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.5.2}
+      BUILD_IMAGE: ${STUDIO_REGISTRY:-ghcr.io/dialog-studio-admin-dev}/studio-renderer:v${STUDIO_VERSION:-1.5.3}
       BUILD_VOLUME: ${COMPOSE_PROJECT_NAME:-studio}_build
     volumes:
       - build:/build
